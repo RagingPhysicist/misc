@@ -6,6 +6,7 @@
     "database": "db"
   },
   "dirpath": "Anynicepath",
+  "machines": ["rtd3", "rtd4", "hdrs1", "hdrs2"],
   "email": {
     "from_address": "rtphysdeb2@gmail.com",
     "to_addresses": "email1@email.com, email2@email.com",

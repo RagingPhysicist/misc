@@ -41,16 +41,16 @@ def get_linac_stats(linac_data):
         patients_per_linac[linac] = len(data['patients'])  # Number of patients
         vmat_per_linac[linac] = data['VMAT_counter']      # Number of VMATs
 
-    # Extract the values into individual variables
-    rtd3_pats = patients_per_linac['rtd3']
-    rtd4_pats = patients_per_linac['rtd4']
-    hdrs1_pats = patients_per_linac['hdrs1']
-    hdrs2_pats = patients_per_linac['hdrs2']
+    # Extract the values into individual variables safely
+    rtd3_pats = patients_per_linac.get('rtd3', 0)
+    rtd4_pats = patients_per_linac.get('rtd4', 0)
+    hdrs1_pats = patients_per_linac.get('hdrs1', 0)
+    hdrs2_pats = patients_per_linac.get('hdrs2', 0)
 
-    rtd3_VMAT = vmat_per_linac['rtd3']
-    rtd4_VMAT = vmat_per_linac['rtd4']
-    hdrs1_VMAT = vmat_per_linac['hdrs1']
-    hdrs2_VMAT = vmat_per_linac['hdrs2']
+    rtd3_VMAT = vmat_per_linac.get('rtd3', 0)
+    rtd4_VMAT = vmat_per_linac.get('rtd4', 0)
+    hdrs1_VMAT = vmat_per_linac.get('hdrs1', 0)
+    hdrs2_VMAT = vmat_per_linac.get('hdrs2', 0)
 
     # Return the current date, number of patients, and VMATs per LINAC
     return current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT
@@ -102,12 +102,8 @@ VMAT = 0
 CONF = 0
 PAT_NUM = 0
 IDS = []
-linac_data = {
-    'rtd3': {'patients': [], 'VMAT_counter': 0},
-    'rtd4': {'patients': [], 'VMAT_counter': 0},
-    'hdrs1': {'patients': [], 'VMAT_counter': 0},
-    'hdrs2': {'patients': [], 'VMAT_counter': 0}
-}
+machines = config.get('machines', ['rtd3', 'rtd4', 'hdrs1', 'hdrs2'])
+linac_data = {machine: {'patients': [], 'VMAT_counter': 0} for machine in machines}
 ph_energies = {'6 MV      ', '10 MV     ', '15 MV     ', '6 MV FFF  ', '10 MV FFF '}
 electron_fields = []
 ph_fields = []

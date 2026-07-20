@@ -41,21 +41,10 @@ def get_linac_stats(linac_data):
         patients_per_linac[linac] = len(data['patients'])  # Number of patients
         vmat_per_linac[linac] = data['VMAT_counter']      # Number of VMATs
 
-    # Extract the values into individual variables safely
-    rtd3_pats = patients_per_linac.get('rtd3', 0)
-    rtd4_pats = patients_per_linac.get('rtd4', 0)
-    hdrs1_pats = patients_per_linac.get('hdrs1', 0)
-    hdrs2_pats = patients_per_linac.get('hdrs2', 0)
+    # Return the current date, patients dict, and VMATs dict
+    return current_date, patients_per_linac, vmat_per_linac
 
-    rtd3_VMAT = vmat_per_linac.get('rtd3', 0)
-    rtd4_VMAT = vmat_per_linac.get('rtd4', 0)
-    hdrs1_VMAT = vmat_per_linac.get('hdrs1', 0)
-    hdrs2_VMAT = vmat_per_linac.get('hdrs2', 0)
-
-    # Return the current date, number of patients, and VMATs per LINAC
-    return current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT
-
-def upload_patient_counts(date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT):
+def upload_patient_counts(date, patients_per_linac, vmat_per_linac, machines):
     try:
         conn = connect_to_database()
         if conn is None:
@@ -63,14 +52,29 @@ def upload_patient_counts(date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rt
 
         cursor = conn.cursor()
 
+        # Build columns and values dynamically based on configured machines
+        columns = ['date']
+        values = [date]
+
+        for machine in machines:
+            columns.append(f"{machine}_pats")
+            values.append(patients_per_linac.get(machine, 0))
+
+        for machine in machines:
+            columns.append(f"{machine}_VMAT")
+            values.append(vmat_per_linac.get(machine, 0))
+
+        columns_str = ", ".join(columns)
+        placeholders_str = ", ".join(["%s"] * len(columns))
+
         # SQL query to insert the values into the table
-        sql_query = """
-        INSERT INTO patient_counts (date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        sql_query = f"""
+        INSERT INTO patient_counts ({columns_str})
+        VALUES ({placeholders_str})
         """
         print(sql_query)
         # Execute the query with the patient counts as values
-        cursor.execute(sql_query, (date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT))
+        cursor.execute(sql_query, tuple(values))
 
         # Commit the transaction
         conn.commit()
@@ -226,8 +230,8 @@ server.login(
 )
 server.send_message(msg)
 server.quit()
-current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT = get_linac_stats(linac_data)
-upload_patient_counts(current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT)
+current_date, patients_per_linac, vmat_per_linac = get_linac_stats(linac_data)
+upload_patient_counts(current_date, patients_per_linac, vmat_per_linac, machines)
 # Output the final report
 #print(report)
 

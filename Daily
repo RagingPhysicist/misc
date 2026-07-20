@@ -1,0 +1,232 @@
+import re
+import pandas as pd
+from datetime import datetime, timedelta, time
+from pathlib import Path
+import smtplib
+from email.mime.text import MIMEText
+#import mysql.connector
+import pymysql
+
+db_config = {
+    'user': 'server',
+    'password': 'pwd',
+    'host': 'x.x.x.x',
+    'database': 'db'
+}
+
+def connect_to_database():
+    try:
+        conn = pymysql.connect(**db_config)
+        return conn
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return None
+
+## get the path out straight away
+# also put the separate subdirectories into a list
+dirpath =  'Anynicepath'
+#machines = ['linac1', 'linac2', 'linac3', 'linac4']
+
+def get_linac_stats(linac_data):
+    # Get the current date in 'YYYY-mm-dd' format
+    current_date = datetime.today().strftime('%Y-%m-%d')
+
+    # Initialize dictionaries to store the number of patients and VMATs
+    patients_per_linac = {}
+    vmat_per_linac = {}
+
+    # Loop through the linac_data and assign values
+    for linac, data in linac_data.items():
+        patients_per_linac[linac] = len(data['patients'])  # Number of patients
+        vmat_per_linac[linac] = data['VMAT_counter']      # Number of VMATs
+
+    # Extract the values into individual variables
+    rtd3_pats = patients_per_linac['rtd3']
+    rtd4_pats = patients_per_linac['rtd4']
+    hdrs1_pats = patients_per_linac['hdrs1']
+    hdrs2_pats = patients_per_linac['hdrs2']
+
+    rtd3_VMAT = vmat_per_linac['rtd3']
+    rtd4_VMAT = vmat_per_linac['rtd4']
+    hdrs1_VMAT = vmat_per_linac['hdrs1']
+    hdrs2_VMAT = vmat_per_linac['hdrs2']
+
+    # Return the current date, number of patients, and VMATs per LINAC
+    return current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT
+
+def upload_patient_counts(date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT):
+    try:
+        conn = connect_to_database()
+        if conn is None:
+            return
+
+        cursor = conn.cursor()
+
+        # SQL query to insert the values into the table
+        sql_query = """
+        INSERT INTO patient_counts (date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        print(sql_query)
+        # Execute the query with the patient counts as values
+        cursor.execute(sql_query, (date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT))
+
+        # Commit the transaction
+        conn.commit()
+
+        print("Data uploaded successfully.")
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+    finally:
+        if conn is not None:
+            cursor.close()
+            conn.close()
+
+today = datetime.today()
+
+# Regex pattern to get data out of the file
+# this regex will pick up every single treated field which is allocated to a 5 digit ID
+# photon and electron beams are coded slightly differently
+regex = r"(?P<Time>(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}))\s+(?P<Id>\d{5})\s+PAT NAME :    (?P<FullName>.{30})"\
+        r"TMT SITE :(?P<Region>.{25})PHASE :\s+FIELD :(?P<Field>.{34})TPLATE :\s+NULL TEMPLATE\s+(?P<SETEnergy>.{10})(?P<SETWedgeStatus>\w+)"\
+        r"\s+(?P<SETMU1>\d{1,4}.\d{1})\s+(?P<SETMU2>\d{1,4}.\d{1})\s+(?P<SETGantStrt>\d{1,3}.\d{1})\s+(?P<SETGantStop>\d{1,3}.\d{1})\s(?P<SETGantDir>\w+)"\
+        r"\s+(?P<SETCollAng>-?\d{1,3}.\d{1})\s+(?P<SETFSX>-?\d{1,2}.\d{2})\s+(?P<SETFSY>-?\d{1,2}.\d{2})\s+(?P<SETOFX>-?\d{1,3}.\d{2})\s+(?P<SETOFY>-?\d{1,3}.\d{2})"\
+        r"\s+(?P<SETX1>-?\d{1,2}.\d{1,2}|\s+)\s+(?P<SETX2>-?\d{1,2}.\d{1,2}|\d{2})\s{20,21}(?P<SetTBLHGT>\d{1,2}.\d{1}|\s{4})\s{5}(?P<SetTBLLONG>\d{1,2}.\d{1}|\s{4})\s{5}(?P<SetTBLLAT>\d{1,2}.\d{1}|\s{4})\s{6,7}(?P<SetColRot>\d{1,2}|\s{3})\s+(?P<SETIsocRot>-?\d{1,3})\s+(?P<SETShadTray>\d{1,3})\s+(?P<SgId>\d{1,2})"\
+        r"\s(?P<ActEnergy>.{10})(?P<ActWedgeStatus>\w+)\s+(?P<ActMU1>\d{1,4}.\d{1})\s+(?P<ActMU2>\d{1,4}.\d{1})\s+(?P<ActGantryStrt>\d{1,3}.\d{1})\s+(?P<ActGantStop>\d{1,3}.\d{1})"\
+        r"\s(?P<ActGantDir>\w+)\s+(?P<ActCollAng>-?\d{1,3}.\d{1})\s+(?P<ActFSX>-?\d{1,2}.\d{2})\s+(?P<ActFSY>-?\d{1,2}.\d{2})\s+(?P<ActOFX>-?\d{1,3}.\d{2})\s+(?P<ActOFY>-?\d{1,3}.\d{2})"\
+        r"\s+(?P<ActX1>-?\d{1,2}.\d{1,2})\s+(?P<ActX2>-?\d{1,2}.\d{1,2})\s+(?P<ActTBLHGT>-?\d{1,2}.\d{1})\s+(?P<ActTBLLONG>-?\d{1,2}.\d{1})\s+(?P<ActTBLLAT>-?\d{1,3}.\d{1})"\
+        r"\s+(?P<ActColRot>\d{1,3})\s+(?P<ActIsocRot>\d{1,3})\s+(?P<ActShadTray>\d{1,2})\s+(?P<MLCSHP>\w+)\s+(?P<TermCode>\d{1,3})?"
+
+TimeStamps = []
+VMAT = 0
+CONF = 0
+PAT_NUM = 0
+IDS = []
+linac_data = {
+    'rtd3': {'patients': [], 'VMAT_counter': 0},
+    'rtd4': {'patients': [], 'VMAT_counter': 0},
+    'hdrs1': {'patients': [], 'VMAT_counter': 0},
+    'hdrs2': {'patients': [], 'VMAT_counter': 0}
+}
+ph_energies = {'6 MV      ', '10 MV     ', '15 MV     ', '6 MV FFF  ', '10 MV FFF '}
+electron_fields = []
+ph_fields = []
+rtg_fields = []
+matches = ()  # Preallocate in case of no match
+# Function to process LINAC data
+def process_linac(dirpath, linac, today, regex, TimeStamps, IDS, linac_data, ph_energies, rtg_fields, electron_fields, ph_fields):
+    VMAT, CONF, PAT_NUM = 0, 0, 0
+    linac_dict = linac_data[linac]
+
+    try:
+        input_file = Path(dirpath, linac, f"ILR_{today.strftime('%Y%m%d')}.txt")
+        with open(input_file, 'rb') as file:
+            fread = file.read()
+        mytext = fread.decode('utf-16')
+        matches = re.finditer(regex, mytext, re.IGNORECASE | re.UNICODE)
+    except FileNotFoundError:
+        print(f"There is no such file as {input_file}")
+        return ""
+    except UnicodeDecodeError:
+        print(f"Error decoding file {input_file}")
+        return ""
+
+    # Process each match found by the regex
+    for match in matches:
+        time_value = match.groupdict().get('Time')
+        if time_value and time_value not in TimeStamps:
+            TimeStamps.append(time_value)
+
+        patient_id = match.groupdict().get('Id')
+        if patient_id:
+            PAT_NUM += 1
+            if patient_id not in IDS:
+                IDS.append(patient_id)
+            if patient_id not in linac_dict['patients']:
+                linac_dict['patients'].append(patient_id)
+                if match.group('SETGantDir') != 'NONE':
+                    linac_dict['VMAT_counter'] += 1
+
+        set_energy = match.groupdict().get('SETEnergy')
+        if set_energy and set_energy not in ph_energies:
+            if set_energy == 'Check RG  ':
+                rtg_fields.append(set_energy)
+            else:
+                electron_fields.append(set_energy)
+        else:
+            ph_fields.append(set_energy)
+
+        term_code = match.groupdict().get('TermCode')
+        set_gant_dir = match.groupdict().get('SETGantDir')
+        if term_code == '501' and set_gant_dir != 'NONE':
+            VMAT += 1
+        if term_code == '501' and set_gant_dir == 'NONE':
+            CONF += 1
+        else:
+            pass
+    if TimeStamps:
+        start_time = datetime.strptime(min(TimeStamps), '%H:%M:%S')
+        end_time = datetime.strptime(max(TimeStamps), '%H:%M:%S')
+        WorkingHours = end_time - start_time
+        report = (f"Az {linac} {start_time.strftime('%H:%M:%S')}-től {end_time.strftime('%H:%M:%S')}-ig kezelt.\n"
+                  f"Összesen: {WorkingHours} órát\n"
+                  f"VMAT mezők száma: {VMAT}\n"
+                  f"Statikus mezők száma: {CONF}\n\n")
+    else:
+        report = f"A {linac} nem kezelt ma.\n\n"
+
+    return report
+
+# Generate report summary
+def generate_report(linac_data, electron_fields):
+    report = ""
+    for linac in linac_data.keys():
+        linac_report = process_linac(dirpath, linac, today, regex, TimeStamps, IDS, linac_data, ph_energies, rtg_fields,
+                                     electron_fields, ph_fields)
+        if linac_report:
+            report +=linac_report
+    for linac, data in linac_data.items():
+        num_patients = len(data['patients'])
+        if num_patients > 0 and data['VMAT_counter'] > 0:
+            vmat_ratio = (data['VMAT_counter'] / num_patients) * 100
+            report += f"\n\n{linac.upper()} \nBeteg száma: {num_patients}  VMAT arány: {round(vmat_ratio)}%"
+        else:
+            report += f"\n\n{linac.upper()} nem kezelt ma."
+
+    total_patients = sum(len(data['patients']) for data in linac_data.values())
+    total_vmat = sum(data['VMAT_counter'] for data in linac_data.values())
+
+    if total_patients > 0:
+        overall_vmat_ratio = (total_vmat / total_patients) * 100
+        report += (f"\n\nÖsszesen\nBetegek száma: {total_patients}  "
+                   f"VMAT arány: {round(overall_vmat_ratio)}%")
+    report += f"\n\nElektron mezők száma: {len(electron_fields)}"
+    return report
+
+
+# Final report generation and sending email
+report = generate_report(linac_data, electron_fields)
+
+# Email part
+from_email_address = 'rtphysdeb2@gmail.com'
+
+subject = "Daily Report for " + today.strftime('%Y-%m-%d')
+
+msg = MIMEText(report)
+
+msg['Subject'] = subject
+msg['From'] = from_email_address
+msg['To'] = "email1@email.com, email2@email.com"
+#msg['To'] = "debugemail@email.com"
+
+server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+server.login("gmailaddress@gmail.com", "cred")
+server.send_message(msg)
+server.quit()
+current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT = get_linac_stats(linac_data)
+upload_patient_counts(current_date, rtd3_pats, rtd4_pats, hdrs1_pats, hdrs2_pats, rtd3_VMAT, rtd4_VMAT, hdrs1_VMAT, hdrs2_VMAT)
+# Output the final report
+#print(report)
+
+
+

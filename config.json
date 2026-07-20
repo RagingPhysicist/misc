@@ -1,0 +1,17 @@
+{
+  "db_config": {
+    "user": "server",
+    "password": "pwd",
+    "host": "x.x.x.x",
+    "database": "db"
+  },
+  "dirpath": "Anynicepath",
+  "email": {
+    "from_address": "rtphysdeb2@gmail.com",
+    "to_addresses": "email1@email.com, email2@email.com",
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 465,
+    "smtp_user": "gmailaddress@gmail.com",
+    "smtp_password": "cred"
+  }
+}
